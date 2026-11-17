@@ -14,6 +14,11 @@
  * Left click (or a long press): a handful of fish food. The pellets land with
  * small rings and float; the hungry koi rise and race over to eat them.
  *
+ * A host can ask for swimmers (opts.swimmers, one or two): girls in bikinis,
+ * seen from above and drawn in the same cells, who swim breaststroke across the
+ * pond, float on their backs for a while on the way, and leave it again for a
+ * time. The koi give them room.
+ *
  * The simulation only moves forward in fixed steps from time, so the same
  * events give the same pond. A page runs it live (start); a film seeks it to
  * any time (seek) and gets the same frame every time.
@@ -152,26 +157,52 @@
   const SEEN = [[0, 0], [0.06, 1, "o"], [1.1, 1, "l"], [END, 0]];
   /* the leg's radius, the round hand's radius, and where the four toes sit around its tip (radians) */
   const LEG = 8.4, HAND = 10, TOES = [-1.12, -0.38, 0.38, 1.12];
+  /*
+   * A swimmer, seen from above, swims breaststroke: glide, pull, tuck, kick.
+   * In body units (she is about a hundred long) al runs from the centre of her
+   * head toward her hands and sd across. Her right elbow, hand, knee and foot
+   * are keyed over one stroke as [phase, al, sd, ease into it]; the left side
+   * mirrors them. SWIM is a body unit in koi units, STROKE one stroke in seconds,
+   * WAIST how far behind her head the middle she turns about lies, and ROLL the
+   * seconds she takes to roll onto her back.
+   */
+  const SWIM = 1.65, STROKE = 1.9, WAIST = 40, ROLL = 1.3;
+  const joint = keys => [keys.map(k => [k[0], k[1], k[3]]), keys.map(k => [k[0], k[2], k[3]])];
+  const ELBOW = joint([[0, 0, 7], [0.28, 0, 7], [0.48, -3, 21, "i"], [0.6, -13, 23, "l"], [0.72, -21, 16, "o"], [0.92, 0, 7], [1, 0, 7]]);
+  const PALM = joint([[0, 19, 2], [0.28, 19, 2], [0.48, 13, 30, "i"], [0.6, -2, 27, "l"], [0.72, -16, 5, "o"], [0.92, 19, 2], [1, 19, 2]]);
+  /* together her legs touch all the way down, so no water shows between them */
+  const KNEE = joint([[0, -70, 3.9], [0.56, -70, 3.9], [0.76, -58, 14], [0.85, -62, 13, "l"], [0.97, -70, 3.9, "o"], [1, -70, 3.9]]);
+  const FOOT = joint([[0, -97, 2.3], [0.56, -97, 2.3], [0.76, -69, 9], [0.85, -82, 25, "o"], [0.97, -97, 2.3], [1, -97, 2.3]]);
+  /* where the same four joints lie as she floats on her back, arms and legs spread, as [al, sd] */
+  const ADRIFT = { elbow: [-8, 23.5], palm: [-2, 41], knee: [-68, 14], foot: [-93, 24] };
+  /* how fast she moves through the stroke: she surges on the kick, glides, and all but stops as she tucks */
+  const SURGE = [[0, 1.2], [0.28, 0.72, "o"], [0.5, 0.9], [0.62, 0.95, "l"], [0.76, 0.4], [0.9, 1.45], [1, 1.2]];
+  /* half the width of her back: the round of the shoulders (from al -6.5), in at the waist, out again to the hips (al -49) */
+  const backW = al => al > -13 ? 10.6 * Math.sqrt(Math.max(0, 1 - ((al + 13) / 6.5) ** 2))
+    : al > -32 ? lerp(7.4, 10.6, sstep(-32, -15, al))
+    : lerp(7.4, 9.6, sstep(-32, -43, al));
   /* Fish food: how long a pellet floats before it sinks out of sight, and how long it takes to sink. */
   const FLOAT = 16, SINKING = 2.5;
   const STEP = 1 / 60;
 
   /*
-   * createPond({ canvas, palette, width?, height?, dpr?, dim?, reduce? })
+   * createPond({ canvas, palette, width?, height?, dpr?, dim?, reduce?, most?, swimmers? })
    * palette() returns the colours: { water, ink, accent, koiLight, koiDark, dark }
    * dim() returns the title's box in canvas pixels, or null: the koi fade under it, and the letters take on their colour.
+   * swimmers: how many girls swim through the pond, 1 or 2 (true is 2); without it the pond is the koi's alone.
    */
   function createPond(opts) {
     const canvas = opts.canvas, ctx = canvas.getContext("2d");
     const reduce = !!opts.reduce;
     const MOST = Math.max(3, Math.round(opts.most || VARIETY.length));
+    const GIRLS = clamp(opts.swimmers === true ? 2 : Math.round(+opts.swimmers || 0), 0, 2);
     const N = 10, RAMP = " .:-=+*#%@", SUB = [0.25, 0.25, 0.75, 0.25, 0.25, 0.75, 0.75, 0.75];
     let vw = 0, vh = 0, dpr = 1, cw = 10, ch = 13, cols = 0, rows = 0, K = 1.85;
     let t = 0, simT = 0, paused = false;
     let P = null;
     let tileRGB, tileA, glyphRGB, glyphA, glyphCode, shade, wake, wakeTmp, tintRGB, tintA;
     const touched = [];
-    let fish = [];
+    let fish = [], swimmers = [];
     const paws = [], rings = [], drops = [], food = [], bubbles = [];
     /* events for a film: { at, fn } run when the simulation passes them */
     const plan = [];
@@ -247,6 +278,7 @@
       const maxTilt = 1.0, yLo = 0.14, yHi = 1 - yLo;
       const menu = food.filter(p => p.eaten < 0 && t > p.land - 0.25 && t - p.land < FLOAT);
       for (const p of menu) p.claim = 0;
+      for (const g of swimmers) stepSwimmer(g, dt);
       const n = count();
       fish.forEach((f, i) => {
         /* A koi that comes or goes as the window is resized fades over half a second. */
@@ -261,6 +293,15 @@
         if (Math.abs(tilt) > maxTilt) turn -= Math.sign(tilt) * 1.4;
         f.turn = lerp(f.turn, turn, Math.min(1, dt * 2));
         const hx = headX(f), hy = headY(f);
+        /* Koi give a swimmer room: the nearer she is, the harder they turn away. */
+        for (const g of swimmers) {
+          if (g.away) continue;
+          const d = Math.hypot(hx - g.x, hy - g.y), R = 150 * k;
+          if (d < R) {
+            const away = Math.atan2(hy - g.y, hx - g.x), da = Math.atan2(Math.sin(away - f.a), Math.cos(away - f.a));
+            f.turn = lerp(f.turn, clamp(da * 2.2, -2, 2), Math.min(1, dt * 4 * (1 - d / R)));
+          }
+        }
         /* A paw hit the water: dart away from it. Food: rise and race to it. Later the curious ones swim back to look. */
         let hurry = 1;
         f.meal = null;
@@ -435,6 +476,207 @@
           if (tile) { tileRGB[i] = pack(tile); tileA[i] = tA * dim; }
           if (gC) { glyphRGB[i] = pack(gC); glyphA[i] = gA * dim; glyphCode[i] = g.charCodeAt(0); }
         }
+      }
+    }
+
+    /* ── the swimmers ── */
+    /* She comes in at one bank, hands first, and swims across on a line of her own. Most times she stops on the way to float. */
+    function enter(g) {
+      const r = j => h2(g.seed, g.trip * 11 + j), first = g.trip === 0;
+      const out = (WAIST + 24) * SWIM * K / Math.max(1, vw);
+      g.right = first ? g.id % 2 === 0 : r(1) < 0.5;
+      /* the first time each keeps clear of a title: one swims below it, one above */
+      g.lane = first ? (g.id ? 0.2 : 0.78) : 0.18 + 0.64 * r(2);
+      /* and clear of a swimmer who is already in the pond */
+      for (const o of swimmers) if (o !== g && !o.away && Math.abs(o.ny - g.lane) < 0.3) g.lane = o.ny < 0.5 ? o.ny + 0.32 : o.ny - 0.32;
+      /* the first one is already a little way in when the pond opens */
+      g.nx = first && !g.id ? 0.1 : g.right ? -out : 1 + out;
+      g.ny = g.lane;
+      g.a = (g.right ? 0 : Math.PI) + (r(3) - 0.5) * 0.3;
+      /* the first time she floats near the middle of the pond, later wherever she likes, or not at all */
+      g.rest = first ? 0.45 : r(4) < 0.6 ? 0.3 + 0.4 * r(5) : -1;
+      g.turn = 0; g.fl = 0; g.floating = false; g.away = false; g.trip++;
+    }
+    function stepSwimmer(g, dt) {
+      if (g.away) { if (t < g.back) return; enter(g); }
+      const k = SWIM * K, zw = Math.max(1, vw), zh = Math.max(1, vh);
+      /* Past the spot she chose, at the start of a glide, she rolls onto her back and floats; after a while she rolls over and swims on. */
+      if (!g.floating && g.rest >= 0 && (g.right ? g.nx > g.rest : g.nx < g.rest) && g.phase < 0.2 && g.ny > 0.14 && g.ny < 0.86) {
+        g.floating = true; g.rest = -1; g.floatUntil = t + 9 + 8 * h2(g.seed, g.trip + 40);
+      }
+      if (g.floating && t > g.floatUntil) g.floating = false;
+      const was = g.fl;
+      g.fl = clamp(g.fl + (g.floating ? dt : -dt) / ROLL, 0, 1);
+      const e = sstep(0, 1, g.fl), x0 = g.nx * vw, y0 = g.ny * vh;
+      /* the roll leaves a ring on the water */
+      if ((was < 0.5) !== (g.fl < 0.5)) { rings.push({ x: x0, y: y0, born: t, k: K * 0.9, small: true }); stamp(x0, y0, 2, 0.5); }
+      /* Her course: back toward her line across the pond, wandering a little about it, and round the other swimmer. */
+      let off = clamp((g.lane - g.ny) * 2.2, -0.45, 0.45) + 0.2 * Math.sin(t * 0.17 + g.seed) + 0.1 * Math.sin(t * 0.071 + g.seed * 1.7);
+      for (const o of swimmers) {
+        if (o === g || o.away) continue;
+        const d = Math.hypot(o.x - x0, o.y - y0), R = 190 * k;
+        if (d < R) off += (y0 === o.y ? (g.id < o.id ? -1 : 1) : Math.sign(y0 - o.y)) * 0.6 * (1 - d / R);
+      }
+      const want = g.right ? off : Math.PI - off, da = Math.atan2(Math.sin(want - g.a), Math.cos(want - g.a));
+      g.turn = lerp(g.turn, clamp(da * 0.8, -0.24, 0.24), Math.min(1, dt * 1.5));
+      if (g.fl === 0) g.phase = (g.phase + dt / g.stroke) % 1;
+      const u = g.phase, surge = track(u, SURGE);
+      /* She turns about her middle and only as fast as she moves, so her feet never swing round her head. Afloat she turns as idly as she drifts. */
+      g.a += lerp(g.turn * surge, 0.05 * Math.sin(t * 0.13 + g.seed), e) * dt;
+      const ux = Math.cos(g.a), uy = Math.sin(g.a), speed = lerp(30 * surge, 3, e) * K * dt;
+      g.nx += ux * speed / zw;
+      g.ny += uy * speed / zh;
+      /* her middle: what the koi and the other swimmer keep clear of */
+      const x = g.x = g.nx * vw, y = g.y = g.ny * vh;
+      /* Out of sight past a bank, she stays away for a while. */
+      const M = (WAIST + 26) * k;
+      if (x < -M || x > vw + M || y < -M || y > vh + M) { g.away = true; g.back = t + 12 + 28 * h2(g.seed, g.trip + 20); return; }
+      /* her ponytail floats behind her and swings out as she turns */
+      g.sway = lerp(g.sway, clamp(g.turn * surge * 12, -5, 5) + Math.sin(t * 2.1 + g.seed) * 0.8, Math.min(1, dt * 2.5));
+      /* the pull stirs the water at her hands, the kick at her feet */
+      const pull = sstep(0.3, 0.42, u) * (1 - sstep(0.6, 0.7, u)), kick = sstep(0.76, 0.84, u) * (1 - sstep(0.93, 1, u));
+      const hx = x + ux * WAIST * k, hy = y + uy * WAIST * k;
+      for (const side of [1, -1]) {
+        for (const [J, amt] of [[PALM, 4 * pull], [FOOT, 9 * kick]]) {
+          if (amt < 0.2 || e > 0) continue;
+          const al = track(u, J[0]), sd = track(u, J[1]) * side;
+          stamp(hx + (ux * al - uy * sd) * k, hy + (uy * al + ux * sd) * k, 1, amt * dt);
+        }
+      }
+    }
+    /* Her ponytail and her limbs as tapered capsules in body units: al, sd and radius at one joint, then at the next. Rolling onto her back, they ease from the stroke to where they lie afloat, and there they bob a little. */
+    const caps = new Float32Array(9 * 6);
+    function pose(g) {
+      const u = g.phase, e = sstep(0, 1, g.fl);
+      let j = 0;
+      const cap = (a0, s0, a1, s1, r0, r1) => { caps[j++] = a0; caps[j++] = s0; caps[j++] = a1; caps[j++] = s1; caps[j++] = r0; caps[j++] = r1; };
+      const at = (J, rest, n) => lerp(track(u, J[n]), rest[n], e);
+      const ea = at(ELBOW, ADRIFT.elbow, 0), es = at(ELBOW, ADRIFT.elbow, 1), pa = at(PALM, ADRIFT.palm, 0), ps = at(PALM, ADRIFT.palm, 1);
+      const ka = at(KNEE, ADRIFT.knee, 0), ks = at(KNEE, ADRIFT.knee, 1), fa = at(FOOT, ADRIFT.foot, 0), fs = at(FOOT, ADRIFT.foot, 1);
+      cap(-4.5, 0, -21, g.sway, 3, 1.7);
+      for (const side of [1, -1]) {
+        const bob = Math.sin(t * 0.8 + g.seed + side) * e;
+        cap(-13, 9.5 * side, ea, es * side, 3.3, 2.9);
+        cap(ea, es * side, pa + 2.2 * bob, ps * side, 2.8, 2.1);
+        cap(-46, 4.8 * side, ka, ks * side, 5.1, 4);
+        cap(ka, ks * side, fa, (fs + 1.6 * bob) * side, 3.8, 2.4);
+      }
+    }
+    /* what bodyAt found: how far across the part the point is, which way its surface leans, how deep under water, and whether it is on her spine */
+    const B = { across: 0, na: 0, ns: 0, wet: 0, ridge: false };
+    /* for the swimmer being drawn: whether she lies on her back, and where the moving edge of her spread hair is */
+    let UP = false, FAN = 0;
+    function capAt(al, sd, n) {
+      const j = n * 6, a0 = caps[j], s0 = caps[j + 1], da = caps[j + 2] - a0, ds = caps[j + 3] - s0;
+      const u = clamp(((al - a0) * da + (sd - s0) * ds) / (da * da + ds * ds || 1), 0, 1);
+      const ea = al - a0 - da * u, es = sd - s0 - ds * u, d = Math.hypot(ea, es), r = lerp(caps[j + 4], caps[j + 5], u);
+      if (d > r) return false;
+      B.across = d / r; B.na = d ? ea / d : 0; B.ns = d ? es / d : 0;
+      return true;
+    }
+    /*
+     * The part of her over a point, the topmost first: 4 ponytail, 3 hair, 2 bikini, 1 skin, 0 water.
+     * Swimming, we see her back: the ponytail lies on it, her arms and legs under it, a little under water.
+     * Floating, we see her face with her hair spread on the water round it.
+     */
+    function bodyAt(al, sd) {
+      B.wet = 0; B.ridge = false;
+      if (UP) {
+        const fd = Math.hypot((al - 0.6) / 5.6, sd / 5);
+        if (fd <= 1) { B.across = fd; B.na = fd ? (al - 0.6) / 5.6 / fd : 0; B.ns = fd ? sd / 5 / fd : 0; return 1; }
+      } else if (capAt(al, sd, 0)) return 4;
+      const hd = Math.hypot(al / 6.9, sd / 6.2);
+      if (hd <= 1) { B.across = hd; B.na = hd ? al / 6.9 / hd : 0; B.ns = hd ? sd / 6.2 / hd : 0; return 3; }
+      if (al < -6.5 && al > -49) {
+        const w = backW(al), across = Math.abs(sd) / w;
+        if (across <= 1) {
+          B.across = across; B.na = 0; B.ns = sd < 0 ? -1 : 1;
+          /* the top, a strap across her back and a band in front, and the bottoms, cut a little higher on the hips */
+          if ((al < (UP ? -16.5 : -17.5) && al > (UP ? -22.5 : -22)) || al < -41.5 + 2 * across) return 2;
+          B.ridge = !UP && across < 0.1 && al < -24 && al > -38;
+          return 1;
+        }
+      }
+      if (UP) {
+        const th = Math.atan2(sd, al - 2), d = Math.hypot(al - 2, sd), R = 11 + 1.5 * Math.sin(3 * th + FAN) + Math.sin(5 * th - FAN * 0.7);
+        if (d <= R) { B.across = d / R; B.na = d ? (al - 2) / d : 0; B.ns = d ? sd / d : 0; B.wet = 0.1; return 3; }
+      }
+      for (let n = 1; n < 9; n++) if (capAt(al, sd, n)) { B.wet = UP ? 0.04 : (n - 1) % 4 < 2 ? 0.1 : 0.18; return 1; }
+      return 0;
+    }
+    /* the glyph on a tile: darker than a light tile, lighter than a dark one, so black hair still shows its strands */
+    const lum = c => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    const inkOn = c => { const l = lum(c); return l < 80 ? mixC(c, [226, 210, 255], P.dark ? 0.42 : 0.3) : mul(c, P.dark ? (l > 165 ? 0.6 : 1.35) : 0.5); };
+    /* Drawn as the koi are: tiles shaded by the light from the upper left with a glyph for the shade, soft at the edges, and a shadow on the pond floor. */
+    function rasterSwimmer(g, dimAt) {
+      const k = SWIM * K, ux = Math.cos(g.a), uy = Math.sin(g.a);
+      /* the centre of her head, ahead of the middle she turns about */
+      const cx = g.nx * vw + ux * WAIST * k, cy = g.ny * vh + uy * WAIST * k;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const al of [-101, 24]) for (const sd of [-45, 45]) {
+        const x = cx + (ux * al - uy * sd) * k, y = cy + (uy * al + ux * sd) * k;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      const c0 = Math.max(0, Math.floor(x0 / cw)), c1 = Math.min(cols - 1, Math.floor(x1 / cw));
+      const r0 = Math.max(0, Math.floor(y0 / ch)), r1 = Math.min(rows - 1, Math.floor(y1 / ch));
+      if (c0 > c1 || r0 > r1) return;
+      pose(g);
+      UP = g.fl > 0.5; FAN = t * 0.5 + g.seed;
+      /* rolling over, she is seen edge on for a moment: narrower across */
+      const q = k * (1 - 0.4 * Math.sin(Math.PI * g.fl));
+      const C = P.swim[g.id % P.swim.length], alphaBase = P.dark ? 0.82 : 0.9, lx = -0.6, ly = -0.8;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const x = c * cw, y = r * ch;
+        /* the cell's centre, then its four sub-samples */
+        let hits = 0, kind = 0, across = 0, na = 0, ns = 0, wet = 0, ridge = false;
+        for (let s = -2; s < SUB.length; s += 2) {
+          const px = x + (s < 0 ? 0.5 : SUB[s]) * cw - cx, py = y + (s < 0 ? 0.5 : SUB[s + 1]) * ch - cy;
+          const got = bodyAt((px * ux + py * uy) / k, (py * ux - px * uy) / q);
+          if (!got) continue;
+          if (!hits) { kind = got; across = B.across; na = B.na; ns = B.ns; wet = B.wet; ridge = B.ridge; }
+          hits++;
+        }
+        if (!hits) continue;
+        const cover = hits / 5, i = r * cols + c, dim = dimAt(x + cw / 2, y + ch / 2);
+        const nz = Math.sqrt(Math.max(0, 1 - across * across));
+        const nxs = (na * ux - ns * uy) * across, nys = (na * uy + ns * ux) * across;
+        /* the caustic net glints on her back as it does on a koi's */
+        const gl = sstep(0.62, 0.96, caus(x + cw / 2, y + ch / 2)) * nz * (1 - 2 * wet);
+        const lit = clamp(0.76 + 0.26 * nz + 0.2 * (nxs * lx + nys * ly) + 0.3 * gl, 0.62, 1.34);
+        const hair = kind >= 3, suit = kind === 2, cloth = hair ? C.hair : suit ? C.suit : C.skin, black = lum(cloth) < 80;
+        const base = wet ? mixC(cloth, P.water, wet) : cloth;
+        let tile = mul(base, lit);
+        /* on dark water black hair and a black bikini catch a little light along their edge, as the cat's paw does */
+        if (black && P.dark) tile = mixC(tile, [140, 126, 176], 0.3 * sstep(0.55, 1, across));
+        const tA = (cover >= 0.6 ? 1 : cover * 1.4) * alphaBase;
+        /* a cell she only brushes keeps the koi that is under it */
+        if (cover < 0.6 && tileA[i] > tA * dim) continue;
+        let gch, gC, gA = 0.62 * alphaBase;
+        if (hair) {
+          /* hair is drawn in strokes along its strands: straight back on her head, along the ponytail behind it, outward where it lies spread on the water */
+          const da = kind === 4 ? caps[2] - caps[0] : UP ? na : 1, ds = kind === 4 ? caps[3] - caps[1] : UP ? ns : 0;
+          gch = lineGlyph(da * ux - ds * uy, da * uy + ds * ux); gC = inkOn(base);
+        } else {
+          gch = RAMP[clamp(1 + Math.round((1.08 - lit) / 0.46 * 6) + (ridge ? 2 : 0), 1, RAMP.length - 1)];
+          gC = inkOn(base);
+          if (gl > 0.5 && !ridge) { gch = "*"; gC = mixC(base, [255, 255, 255], 0.75); gA = (0.45 + 0.4 * gl) * alphaBase; }
+        }
+        if (cover >= 0.6) {
+          const si = (r + 2) * cols + (c + 3);
+          if (r + 2 < rows && c + 3 < cols) shade[si] = Math.max(shade[si], (P.dark ? 0.55 : 0.22) * dim);
+        }
+        if (!tileA[i] && !glyphA[i]) touched.push(i);
+        tileRGB[i] = pack(tile); tileA[i] = tA * dim;
+        glyphRGB[i] = pack(gC); glyphA[i] = gA * dim; glyphCode[i] = gch.charCodeAt(0);
+        /* the title takes on her colours as it does a koi's: a coloured bikini or hair most, black least */
+        tintRGB[i] = pack(tile); tintA[i] = tA * (black ? (P.dark ? 0.4 : 0.6) : hair || suit ? 1 : (P.dark ? 0.7 : 0.25)) * (1 + 0.6 * gl);
+      }
+      /* afloat her eyes are closed: two short strokes across her face */
+      if (UP) for (const side of [1, -1]) {
+        const x = cx + ux * 1.6 * k - uy * 2.4 * side * q, y = cy + uy * 1.6 * k + ux * 2.4 * side * q;
+        const c = Math.floor(x / cw), r = Math.floor(y / ch), i = r * cols + c;
+        if (c < 0 || r < 0 || c >= cols || r >= rows || !(tileA[i] > 0)) continue;
+        glyphRGB[i] = pack(mul(C.skin, 0.36)); glyphA[i] = 0.85 * alphaBase * dimAt(x, y); glyphCode[i] = lineGlyph(-uy, ux).charCodeAt(0);
       }
     }
 
@@ -755,6 +997,12 @@
         gold: scheme([230, 164, 52], [222, 228, 232], [98, 74, 42]),
         sakura: scheme([238, 132, 128], [250, 240, 228], [66, 60, 70])
       };
+      /* the swimmers share a skin; one has black hair and a black bikini with a purple cast, the other pale lilac hair and a light blue bikini */
+      const skin = dark ? [240, 198, 164] : [226, 176, 138];
+      P.swim = [
+        { skin, hair: dark ? [44, 37, 58] : [34, 28, 46], suit: dark ? [40, 34, 54] : [32, 27, 44] },
+        { skin, hair: dark ? [206, 180, 240] : [184, 152, 222], suit: dark ? [128, 198, 246] : [112, 176, 232] }
+      ];
     }
 
     function render() {
@@ -769,6 +1017,8 @@
       } : () => 1;
       const order = fish.filter(f => f.seen > 0).sort((a, b) => a.depth - b.depth);
       for (const f of order) rasterize(f, dimAt);
+      /* they swim at the surface, over every koi */
+      for (const g of swimmers) if (!g.away) rasterSwimmer(g, dimAt);
       rasterDrops();
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -827,6 +1077,13 @@
     /* From scratch: the shoal, then a few seconds of swimming so it starts in natural curves. */
     function reset() {
       makeFish();
+      /* The first swimmer sets out as the pond opens, the second a little later; each differs a little in her stroke. */
+      swimmers = Array.from({ length: GIRLS }, (_, i) => ({
+        id: i, seed: 211 + i * 57, stroke: STROKE * (1 + 0.08 * i), phase: 0, trip: 0, away: true, back: i * 18,
+        nx: -1, ny: 0.5, x: -1e5, y: -1e5, a: 0, turn: 0, lane: 0.5, right: true, sway: 0,
+        /* floating: where on her way she will stop to, whether she does now, until when, and how far she has rolled onto her back */
+        rest: -1, floating: false, floatUntil: 0, fl: 0
+      }));
       paws.length = rings.length = drops.length = food.length = bubbles.length = 0;
       wake.fill(0); wakeTmp.fill(0);
       t = 0;
@@ -887,9 +1144,10 @@
       pause(v) { paused = v === undefined ? !paused : !!v; dirty = true; return paused; },
       get paused() { return paused; },
       get time() { return t; },
-      /* for tests: the koi and the food */
+      /* for tests: the koi, the food and the swimmers (those with away set are out of the pond) */
       get fish() { return fish; },
       get food() { return food; },
+      get swimmers() { return swimmers; },
       render() { render(); },
       /* The colour of the koi under canvas point (x, y), as [r, g, b, weight], or null: the title takes it on. */
       tint(x, y) {

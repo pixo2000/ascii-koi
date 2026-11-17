@@ -5,6 +5,7 @@
  *   ?theme=pond|black|light    the water (remembered when you switch)
  *   ?title=One%20Page&tag=is%20all%20you%20need   your own words instead of the clock
  *   ?ui=0                       no controls (for a wallpaper or a recording)
+ *   ?swimmers=0                 the koi alone, without the girls who swim through the pond (1: only one of them)
  *   keys: 1 2 3 or T for the water, space to pause
  */
 (() => {
@@ -43,7 +44,7 @@
   });
 
   const pond = createPond({
-    canvas: pondCanvas, palette, reduce,
+    canvas: pondCanvas, palette, reduce, swimmers: q.has("swimmers") ? q.get("swimmers") : 2,
     /* the title's box in pond pixels: the koi fade under it, so the letters can wear their colour */
     dim: () => { const r = box.getBoundingClientRect(); return r.width ? r : null; }
   });

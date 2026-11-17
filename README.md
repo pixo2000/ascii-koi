@@ -54,14 +54,16 @@ Any other browser: set your home page to **https://pursurer.github.io/ascii-koi/
 | `themes/light.html` | A page locked to one water |
 | `?title=One%20Page&tag=is%20all%20you%20need` | Your own words instead of the clock |
 | `?ui=0` | No controls: a wallpaper, a second screen, a stream background |
+| `?swimmers=0` | The koi alone, without the two girls who swim through the pond (`?swimmers=1` for just one) |
 
 ## How it works
 
 - **Koi.** Each fish is a chain of ten spine nodes trailing its head, with a travelling body wave. Every character cell is sampled against the nearest point on the spine (plus sub-samples for soft edges), classified as body, fin, eye or barbel, coloured by the fish's own markings (kohaku, sanke, tancho) and shaded by a light from the upper left: lit skin gets sparse glyphs, shadowed skin dense ones. Each koi casts a shadow on the pond floor and leaves a wake.
 - **Water.** Two drifting noise fields; where they meet, light gathers in a thin moving net of `· - ~`, and the scales glint `*` where it crosses a back.
+- **Swimmers.** Two girls in bikinis swim breaststroke across the pond, seen from above and drawn in the same cells as the koi: tiles shaded by the same light, a shadow on the pond floor, a wake at their hands and feet. One has black hair and a black bikini with a purple cast, the other pale lilac hair and a light blue bikini. The stroke is keyframed (glide, pull, tuck, kick) and they surge with every kick; they turn about their middle and only as fast as they move. On the way most of them roll onto their backs and float for a while, arms and legs spread, eyes closed, hair fanned out on the water. Each swims out past a bank and stays away for a time, so the pond is sometimes theirs, sometimes the koi's alone; the koi give them room. A host switches them on with `createPond({ swimmers: 2 })`.
 - **Deterministic.** For a recording the simulation steps forward in fixed 1/60 s steps, so the same events always give the same frame. The film above was rendered frame by frame from this exact engine with [huashu-motion](https://github.com/alchaincyf/huashu-motion); nothing in it is mocked up.
 - **More koi elsewhere.** `createPond({ most })` raises the cap of fourteen for a host that wants a fuller shoal; Codex Koi uses 24.
-- **Small.** Vanilla JavaScript, no build step, no dependencies: `pond.js` (the engine) and `app.js` (the page) are about 1,200 lines together, plus two web fonts (37 KB).
+- **Small.** Vanilla JavaScript, no build step, no dependencies: `pond.js` (the engine) and `app.js` (the page) are about 1,500 lines together, plus two web fonts (37 KB).
 
 <!-- family:start -->
 ## The ASCII Koi family
