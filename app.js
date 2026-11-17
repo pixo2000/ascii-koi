@@ -153,14 +153,16 @@
   let held = null, fedAt = 0;
   const feedAt = (x, y) => { const now = performance.now(); if (now - fedAt < 500) return; fedAt = now; pond.feed(x, y); };
   addEventListener("pointerdown", e => {
-    if (e.button !== 0 || onUi(e)) return;
-    /* a tap is a paw, a long press is food */
+    if (onUi(e)) return;
+    /* a tap is a paw, a long press or left click is food */
     if (e.pointerType === "touch" || e.pointerType === "pen") {
+      if (e.button !== 0) return;
       clearTimeout(held?.timer);
       held = { x: e.clientX, y: e.clientY, at: performance.now(), timer: setTimeout(() => { if (held) { feedAt(held.x, held.y); held = null; } }, 450) };
       return;
     }
-    pond.paw(e.clientX, e.clientY);
+    if (e.button === 0) feedAt(e.clientX, e.clientY);
+    else if (e.button === 1) { e.preventDefault(); pond.paw(e.clientX, e.clientY); }
   });
   addEventListener("pointermove", e => { if (held && Math.hypot(e.clientX - held.x, e.clientY - held.y) > 14) { clearTimeout(held.timer); held = null; } });
   addEventListener("pointerup", () => { if (held) { clearTimeout(held.timer); pond.paw(held.x, held.y); held = null; } });
@@ -169,7 +171,6 @@
     if (onUi(e)) return;
     e.preventDefault();
     if (held) { clearTimeout(held.timer); held = null; }
-    feedAt(e.clientX, e.clientY);
   });
   addEventListener("keydown", e => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.("input, textarea")) return;

@@ -8,10 +8,10 @@
  * upper left: light skin gets sparse glyphs, shadowed skin dense ones. Koi cast
  * a shadow on the pond floor and leave a short wake.
  *
- * Left click: a black cat paw reaches in from the nearer edge, dips, hooks the
+ * Middle click: a black cat paw reaches in from the nearer edge, dips, hooks the
  * water back in two tugs and flicks out with a spray of drops. The koi scatter;
  * a moment later the curious ones swim back to look.
- * Right click (or a long press): a handful of fish food. The pellets land with
+ * Left click (or a long press): a handful of fish food. The pellets land with
  * small rings and float; the hungry koi rise and race over to eat them.
  *
  * The simulation only moves forward in fixed steps from time, so the same

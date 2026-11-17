@@ -20,8 +20,8 @@
 
 | | |
 |---|---|
-| **Left click** | A black cat paw reaches in from the edge, hooks the water back in two tugs and flicks out a spray of drops. The koi bolt. A moment later the curious ones swim back to look. |
-| **Right click** | A handful of fish food. Every pellet lands with its own ring, the hungry koi rise to the surface and race each other to eat. |
+| **Middle click** | A black cat paw reaches in from the edge, hooks the water back in two tugs and flicks out a spray of drops. The koi bolt. A moment later the curious ones swim back to look. |
+| **Left click** | A handful of fish food. Every pellet lands with its own ring, the hungry koi rise to the surface and race each other to eat. |
 | **Tap / hold** | The same on a phone or tablet: tap for the paw, hold for food. |
 | **`1` `2` `3` or `T`** | Three waters: **pond** (deep lake teal), **black** and **light**. The new water spreads out like a ripple from where you chose it. |
 | **`Space`** | Freeze the pond. |
