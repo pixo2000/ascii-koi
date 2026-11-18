@@ -101,8 +101,9 @@
    * the fact instead. Offline, or with ?fact=0 or your own words, the line simply stays away. The text
    * is broken into lines here, so each line is an element of its own that the change of water can redraw.
    */
-  const LINE_KEY = "ascii-koi-fact", NINJAS_KEY = "ascii-koi-ninjas-key";
-  const FACT_URL = "https://uselessfacts.jsph.pl/api/v2/facts/today?language=de";
+  /* the API's own fact of the day does not change in German, so a random one is drawn, once a day; a new name for what is kept, so a fact kept from that endpoint is not shown again */
+  const LINE_KEY = "ascii-koi-line", NINJAS_KEY = "ascii-koi-ninjas-key";
+  const FACT_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=de";
   const QUOTE_URL = "https://api.api-ninjas.com/v2/randomquotes?categories=", QUOTE_TOPICS = ["life", "wisdom", "success"];
   const kept = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -145,6 +146,7 @@
     let last = null;
     try { last = JSON.parse(kept.get(LINE_KEY)); } catch (e) { /* nothing kept */ }
     if (last && last.day === day && last.kind === kind && typeof last.text === "string" && last.text) { showLine(last.text, last.by || ""); return; }
+    try { localStorage.removeItem("ascii-koi-fact"); } catch (e) { /* the old name, no longer read */ }
     let line = null;
     if (kind === "quote") {
       try {
