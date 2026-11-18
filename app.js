@@ -104,7 +104,7 @@
   /* the API's own fact of the day does not change in German, so a random one is drawn, once a day; a new name for what is kept, so a fact kept from that endpoint is not shown again */
   const LINE_KEY = "ascii-koi-line", NINJAS_KEY = "ascii-koi-ninjas-key";
   const FACT_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=de";
-  const QUOTE_URL = "https://api.api-ninjas.com/v2/randomquotes?categories=", QUOTE_TOPICS = ["life", "wisdom", "success"];
+  const QUOTE_URL = "https://api.api-ninjas.com/v2/randomquotes?categories=", QUOTE_TOPICS = ["success"];
   const kept = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* private window: not kept */ } }
