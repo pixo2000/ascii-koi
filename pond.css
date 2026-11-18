@@ -49,7 +49,13 @@ body {
 .intro-box.go .intro-line { opacity: 1; animation: intro-line-in 900ms cubic-bezier(0.22, 1, 0.36, 1) 900ms backwards; }
 @keyframes intro-line-in { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } }
 @media (max-width: 720px) { .intro-line { margin-top: 10px; font-size: 12px; letter-spacing: 0.2em; } }
-@media (prefers-reduced-motion: reduce) { .intro-line { opacity: 1; } .intro-box.go .intro-line { animation: none; } }
+/* the fact of the day: plain sentences, quieter than the date, one element a line. It hangs under the words without moving them, so the clock stays put when it arrives. */
+.intro-fact { position: absolute; top: 100%; left: 50%; translate: -50% 0; width: max-content; margin: 12px 0 0; display: grid; justify-items: center; font-size: 12px; line-height: 19px; letter-spacing: 0.03em; white-space: nowrap; color: color-mix(in srgb, var(--ink) 64%, transparent); opacity: 0; }
+.intro-fact:empty { display: none; }
+.intro-fact.show { opacity: 1; animation: intro-line-in 900ms cubic-bezier(0.22, 1, 0.36, 1) 300ms backwards; }
+/* a window too low for it keeps the clock and the controls clear */
+@media (max-height: 560px) { .intro-fact { display: none; } }
+@media (prefers-reduced-motion: reduce) { .intro-line { opacity: 1; } .intro-box.go .intro-line, .intro-fact.show { animation: none; } }
 
 /* the old water, with a widening hole that shows the new one */
 @property --r { syntax: "<length>"; inherits: false; initial-value: 0px; }

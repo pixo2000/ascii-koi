@@ -1169,10 +1169,15 @@
    * a glyph pressed into it in the water's colour. A koi passing under takes
    * the cell to its colour, and where the caustic net crosses, the cell
    * brightens. A blurred glow canvas behind the letters carries that light.
-   * New cells flicker through random glyphs and settle into the word; when the
-   * text changes (the clock ticks), only the cells that changed flicker.
+   * A new word is unveiled from left to right: each cell flickers through
+   * random glyphs, settles, and lands with a short flash. When the text changes
+   * (the clock ticks), a wave runs down the word and only the cells that
+   * changed are redrawn; until it reaches them they keep the old letter.
    *
-   * spec() returns { text, font, cw, ch, maxW, tone, edge, glow }. look.tint(x, y)
+   * spec() returns { text, font, cw, ch, maxW, tone, edge, glow, fixed, beat }.
+   * fixed gives every digit a slot as wide as the widest, so a clock keeps its
+   * grid from minute to minute; beat is a character that pulses with the
+   * seconds (a clock's colon). look.tint(x, y)
    * and look.light(x, y) give the koi colour and the water's light under a cell
    * centre, in viewport pixels (a full-window pond's own). The colours are read from CSS:
    * --title-from, --title-to (left to right), --title-glow and --pond.
@@ -1180,7 +1185,11 @@
   function AsciiMark(canvas, spec, look = {}) {
     const ctx = canvas.getContext("2d");
     const NOISE = "/\\|=+*%#@", EDGE = " |/-\\";
-    let cols = 0, rows = 0, cw = 6, ch = 8, cov = null, born = null, edge = null, ex = null, ey = null;
+    let cols = 0, rows = 0, cw = 6, ch = 8, born = null;
+    /* the word as it is, and as it was before the last change: coverage, outline strokes and their offsets */
+    let cur = null, was = null;
+    /* the columns of the beating character, and until when cells are still settling */
+    let beat = null, busyUntil = 0;
     let tone = 1, glowK = 0, ready = false, dpr = 1, glow = null, gctx = null, gimg = null;
     /* the glyphs of one frame, drawn after the tiles */
     const Q = { g: [], x: [], y: [], a: [], f: [] };
@@ -1190,18 +1199,30 @@
       try { await document.fonts.load(o.font, o.text); } catch (e) { /* draw with the fallback font */ }
       const m = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
       m.font = o.font;
-      const met = m.measureText(o.text);
+      /* where each character starts: as the font sets them, or with every digit centred in a slot of one width */
+      const chars = [...o.text], at = [];
+      const slot = o.fixed ? Math.max(...[..."0123456789"].map(d => m.measureText(d).width)) : 0;
+      let run = 0;
+      for (const c of chars) { const w = m.measureText(c).width, a = slot && c >= "0" && c <= "9" ? slot : w; at.push(run + (a - w) / 2); run += a; }
+      /* fixed digits are measured against all ten, so the height does not change with the time either */
+      const met = m.measureText(o.fixed ? "0123456789" + o.text : o.text);
       const asc = Math.ceil(met.actualBoundingBoxAscent), desc = Math.ceil(met.actualBoundingBoxDescent);
-      const left = Math.ceil(met.actualBoundingBoxLeft), tw = Math.ceil(met.actualBoundingBoxLeft + met.actualBoundingBoxRight);
-      const pad = Math.ceil(asc * 0.05), mw = Math.max(1, tw + pad * 2), mh = Math.max(1, asc + desc + pad * 2);
+      const left = o.fixed ? 0 : Math.ceil(met.actualBoundingBoxLeft), tw = o.fixed ? Math.ceil(run) : Math.ceil(met.actualBoundingBoxLeft + met.actualBoundingBoxRight);
+      const pad = Math.ceil(asc * (o.fixed ? 0.08 : 0.05)), mw = Math.max(1, tw + pad * 2), mh = Math.max(1, asc + desc + pad * 2);
       m.canvas.width = mw; m.canvas.height = mh;
       m.font = o.font; m.fillStyle = "#000";
-      m.fillText(o.text, pad + left, pad + asc);
+      if (o.fixed) chars.forEach((c, j) => m.fillText(c, pad + at[j], pad + asc));
+      else m.fillText(o.text, pad + left, pad + asc);
       const data = m.getImageData(0, 0, mw, mh).data;
       const s = Math.min(1, o.maxW / mw);
       const nc = Math.ceil(mw * s / cw), nr = Math.ceil(mh * s / ch);
       /* a window with no width yet (a hidden or prerendered tab): nothing to draw until it is resized */
       if (!nc || !nr) { ready = false; return; }
+      const bi = o.beat ? chars.indexOf(o.beat) : -1;
+      if (bi >= 0) {
+        const x0 = pad + left + (o.fixed ? at[bi] : m.measureText(chars.slice(0, bi).join("")).width);
+        beat = [Math.round(x0 * s / cw), Math.round((x0 + m.measureText(o.beat).width) * s / cw) - 1];
+      } else beat = null;
       const next = new Float32Array(nc * nr);
       for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) {
         let a = 0;
@@ -1211,12 +1232,21 @@
         }
         next[r * nc + c] = a / (9 * 255);
       }
-      /* the same grid: only cells that changed settle again */
-      if (cov && nc === cols && nr === rows) for (let i = 0; i < next.length; i++) { if (Math.abs(next[i] - cov[i]) > 0.08) born[i] = now; }
-      else born = new Float32Array(nc * nr).fill(now);
-      cols = nc; rows = nr; cov = next;
+      if (cur && nc === cols && nr === rows) {
+        /* the same grid: only cells that changed settle again, as a wave runs down the word; until then they show the old letter */
+        was = cur;
+        for (let i = 0; i < next.length; i++) if (Math.abs(next[i] - cur.cov[i]) > 0.08) born[i] = now + ((i / nc) | 0) / nr * 0.4 + h2(i, 5) * 0.1;
+      } else {
+        /* a new word is unveiled from left to right */
+        was = null;
+        born = new Float32Array(nc * nr);
+        for (let i = 0; i < born.length; i++) born[i] = now + (i % nc) / nc * 0.55 + h2(i, 5) * 0.25;
+      }
+      busyUntil = now + 2;
+      cols = nc; rows = nr;
+      const cov = next;
       /* the outline: a stroke by the direction of the coverage gradient; thin serif hairlines keep theirs down to 6 % coverage */
-      edge = null;
+      let edge = null, ex = null, ey = null;
       if (o.edge) {
         edge = new Uint8Array(cols * rows); ex = new Float32Array(cols * rows); ey = new Float32Array(cols * rows);
         const at = (c, r) => c < 0 || r < 0 || c >= cols || r >= rows ? 0 : cov[r * cols + c];
@@ -1234,8 +1264,11 @@
           ex[i] = gx / n * k * cw; ey[i] = gy / n * k * ch;
         }
       }
+      cur = { cov, edge, ex, ey };
       dpr = Math.min(4, global.devicePixelRatio || 1);
-      canvas.width = Math.round(cols * cw * dpr); canvas.height = Math.round(rows * ch * dpr);
+      /* Setting a canvas's size clears it, even to the size it has: only when it changes, or every tick of the clock would blank the word until the next draw. */
+      const W = Math.round(cols * cw * dpr), H = Math.round(rows * ch * dpr);
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       canvas.style.width = cols * cw + "px"; canvas.style.height = rows * ch + "px";
       /* the glow: one pixel per cell in the light the letters take on; CSS blurs it behind them */
       if (glowK && !glow) {
@@ -1245,10 +1278,12 @@
         gctx = glow.getContext("2d");
       }
       if (glow) {
-        glow.width = cols; glow.height = rows; gimg = gctx.createImageData(cols, rows);
+        if (glow.width !== cols || glow.height !== rows || !gimg) { glow.width = cols; glow.height = rows; gimg = gctx.createImageData(cols, rows); }
         glow.style.width = cols * cw + "px"; glow.style.height = rows * ch + "px";
       }
       ready = true;
+      /* the new word at once, so no frame shows the canvas as its new size left it */
+      draw(now);
     }
     function draw(now) {
       if (!ready) return;
@@ -1258,44 +1293,54 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cols * cw, rows * ch);
       if (glow) { glow.style.left = canvas.offsetLeft + "px"; glow.style.top = canvas.offsetTop + "px"; gimg.data.fill(0); }
-      ctx.font = `700 ${(ch * (edge ? 0.95 : 1.1)).toFixed(1)}px ${MONO}`;
+      ctx.font = `700 ${(ch * (cur.edge ? 0.95 : 1.1)).toFixed(1)}px ${MONO}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const snap = v => Math.round(v * dpr) / dpr, gap = cw * 0.06, G = gimg ? gimg.data : null, tick = Math.floor(now * 24);
+      /* the beat: brightest on the second, fading between */
+      const pulse = beat ? 0.6 + 0.4 * (0.5 + 0.5 * Math.cos(Date.now() % 1000 / 1000 * 2 * Math.PI)) : 1;
       /* where each cell is on screen, to find the koi under it */
       const box = look.tint || look.light ? canvas.getBoundingClientRect() : null, sx = box ? box.width / (cols * cw) : 1, sy = box ? box.height / (rows * ch) : 1;
       /* the tiles are drawn as they come and the glyphs queued, then drawn in one run (as in the pond) */
       let n = 0;
       const glyph = (g, x, y, a, fill) => { Q.g[n] = g; Q.x[n] = x; Q.y[n] = y; Q.a[n] = a; Q.f[n] = fill; n++; };
       for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-        const i = r * cols + c, v = cov[i], e = edge ? edge[i] : 0;
-        if (v < (e ? 0.06 : 0.12)) continue;
-        const h = h2(c + 7, r + 3), x = c / cols, age = now - born[i], settle = 0.15 + h * 0.95;
-        if (age < 0) continue;
-        if (age < settle) {
-          glyph(NOISE[(h2(i, tick) * NOISE.length) | 0], c * cw + cw / 2, r * ch + ch / 2, tone * (0.25 + 0.5 * (age / settle)), css(pack(mixC(from, to, x))));
+        const i = r * cols + c, h = h2(c + 7, r + 3), x = c / cols, age = now - born[i], settle = 0.18 + h * 0.3;
+        /* a cell the wave has not reached yet still shows the old letter, or nothing in a new word */
+        if (age < 0 && !was) continue;
+        const w0 = age < 0 ? was : cur, v = w0.cov[i], e = w0.edge ? w0.edge[i] : 0, none = v < (e ? 0.06 : 0.12);
+        if (age >= 0 && age < settle) {
+          /* settling: a cell that takes ink flickers up to it, one that loses its ink flickers out */
+          if (none && !(was && was.cov[i] >= 0.12)) continue;
+          const u = age / settle;
+          glyph(NOISE[(h2(i, tick) * NOISE.length) | 0], c * cw + cw / 2, r * ch + ch / 2, tone * (none ? 0.6 * (1 - u) : 0.25 + 0.5 * u), css(pack(mixC(from, to, x))));
           continue;
         }
+        if (none) continue;
+        /* just settled, a cell flashes in the title's strongest colour and its glow swells */
+        const F = age >= settle ? clamp(1 - (age - settle) / 0.4, 0, 1) ** 2 : 0;
+        const tn = tone * (beat && c >= beat[0] && c <= beat[1] ? pulse : 1);
         const px = box ? box.left + (c + 0.5) * cw * sx : 0, py = box ? box.top + (r + 0.5) * ch * sy : 0;
         const k = look.tint && look.tint(px, py), w = k ? Math.min(1, k[3] * 1.15) : 0;
         const l = look.light ? clamp((look.light(px, py) - 0.72) / 0.28, 0, 1) : 0, L = l * l * (3 - 2 * l);
         const col = from.map((f, j) => {
           let n = f + (to[j] - f) * x;
           if (k) n += (k[j] - n) * w;
-          return n + (255 - n) * 0.45 * L;
+          n += (255 - n) * 0.45 * L;
+          return n + (f - n) * 0.75 * F;
         });
         const fill = css(pack(col));
-        if (e) glyph(EDGE[e], c * cw + cw / 2 + ex[i], r * ch + ch / 2 + ey[i], tone * Math.min(1, 0.5 + v + 0.3 * L), fill);
+        if (e) glyph(EDGE[e], c * cw + cw / 2 + w0.ex[i], r * ch + ch / 2 + w0.ey[i], tn * Math.min(1, 0.5 + v + 0.3 * L + 0.3 * F), fill);
         else if (v >= 0.62) {
           /* inside a stroke: a tile like the koi's, with a glyph pressed into it in the water's colour */
-          ctx.globalAlpha = tone * (0.68 + 0.27 * Math.min(1, (v - 0.62) / 0.3) + 0.1 * w + 0.12 * L);
+          ctx.globalAlpha = tn * Math.min(1, 0.68 + 0.27 * Math.min(1, (v - 0.62) / 0.3) + 0.1 * w + 0.12 * L + 0.2 * F);
           ctx.fillStyle = fill;
           const x0 = snap(c * cw + gap), y0 = snap(r * ch + gap);
           ctx.fillRect(x0, y0, snap((c + 1) * cw - gap) - x0, snap((r + 1) * ch - gap) - y0);
-          glyph(v > 0.9 ? (h < 0.5 ? "#" : "@") : "%", c * cw + cw / 2, r * ch + ch / 2, 0.24 * tone, water);
-        } else glyph(v > 0.32 ? "+" : ":", c * cw + cw / 2, r * ch + ch / 2, tone * 0.85, fill);
+          glyph(v > 0.9 ? (h < 0.5 ? "#" : "@") : "%", c * cw + cw / 2, r * ch + ch / 2, 0.24 * tn, water);
+        } else glyph(v > 0.32 ? "+" : ":", c * cw + cw / 2, r * ch + ch / 2, tn * 0.85, fill);
         if (G) {
-          const q = i * 4, ga = gk * tone * (v >= 0.62 ? 1 : v) * (0.16 + 0.6 * w + 0.32 * L);
+          const q = i * 4, ga = gk * tn * (v >= 0.62 ? 1 : v) * (0.16 + 0.6 * w + 0.32 * L + 0.7 * F);
           G[q] = col[0]; G[q + 1] = col[1]; G[q + 2] = col[2]; G[q + 3] = Math.min(255, ga * 255);
         }
       }
@@ -1307,7 +1352,8 @@
       ctx.globalAlpha = 1;
       if (glow) gctx.putImageData(gimg, 0, 0);
     }
-    return { build, draw, get glow() { return glow; }, get size() { return { w: cols * cw, h: rows * ch }; } };
+    /* busy(now): cells are still settling, so the word wants drawing more often than a settled one */
+    return { build, draw, busy: now => now < busyUntil, get glow() { return glow; }, get size() { return { w: cols * cw, h: rows * ch }; } };
   }
 
   global.AsciiKoi = { createPond, AsciiMark, seeded };

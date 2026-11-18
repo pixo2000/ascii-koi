@@ -2,3 +2,6 @@
 film/
 .DS_Store
 node_modules/
+
+# your own settings (API keys): copy config.example.js to config.js; never committed
+config.js

@@ -26,7 +26,9 @@
 | **`1` `2` `3` or `T`** | Three waters: **pond** (deep lake teal), **black** and **light**. The new water spreads out like a ripple from where you chose it. |
 | **`Space`** | Freeze the pond. |
 
-The clock is not a font. It is the outline of Noto Serif Display sampled into character cells: the contour becomes `| / - \` strokes, the strokes become solid tiles, and every koi that swims underneath tints the digits in its own colours while a caustic light net plays across them.
+The clock is not a font. It is the outline of Noto Serif Display sampled into character cells: the contour becomes `| / - \` strokes, the strokes become solid tiles, and every koi that swims underneath tints the digits in its own colours while a caustic light net plays across them. It is unveiled from left to right, cell by cell; its digits keep their places, so when the minute changes a wave runs down the clock and only the digits that changed flicker into the new time and land with a short flash. The colon beats with the seconds.
+
+The page speaks German: the day, the date and the controls. Under the date it shows a line of the day: a fun fact in German from the free [uselessfacts](https://uselessfacts.jsph.pl/) API, or, if you give it a free [API Ninjas](https://api-ninjas.com/api/quotes) key, a fact and a quote on alternate days (the quotes are English, from the categories life, wisdom and success, one a day). One request a day, kept in the browser until the next; offline the line is simply absent.
 
 ## The film
 
@@ -55,6 +57,9 @@ Any other browser: set your home page to **https://pursurer.github.io/ascii-koi/
 | `?title=One%20Page&tag=is%20all%20you%20need` | Your own words instead of the clock |
 | `?ui=0` | No controls: a wallpaper, a second screen, a stream background |
 | `?swimmers=0` | The koi alone, without the two girls who swim through the pond (`?swimmers=1` for just one) |
+| `?fact=0` | No line of the day, and no request for one |
+| `?key=YOUR_KEY` | Your API Ninjas key, for the quotes. Open the page with it once: the browser keeps it and takes it out of the address bar, so a new tab finds it too. `?key=` with nothing forgets it. The key travels with each request from your browser, so use a free key, not one that matters |
+| `config.js` | The same key in a file of your own, for a copy you run from the folder or as the extension: copy `config.example.js` to `config.js` and put the key in. It survives clearing the browser's data and wins over `?key=`. `config.js` is in `.gitignore`, so it is never committed and never published to GitHub Pages |
 
 ## How it works
 
@@ -63,7 +68,7 @@ Any other browser: set your home page to **https://pursurer.github.io/ascii-koi/
 - **Swimmers.** Two girls in bikinis swim breaststroke across the pond, seen from above and drawn in the same cells as the koi: tiles shaded by the same light, a shadow on the pond floor, a wake at their hands and feet. One has black hair and a black bikini with a purple cast, the other pale lilac hair and a light blue bikini. The stroke is keyframed (glide, pull, tuck, kick) and they surge with every kick; they turn about their middle and only as fast as they move. On the way most of them roll onto their backs and float for a while, arms and legs spread, eyes closed, hair fanned out on the water. Each swims out past a bank and stays away for a time, so the pond is sometimes theirs, sometimes the koi's alone; the koi give them room. A host switches them on with `createPond({ swimmers: 2 })`.
 - **Deterministic.** For a recording the simulation steps forward in fixed 1/60 s steps, so the same events always give the same frame. The film above was rendered frame by frame from this exact engine with [huashu-motion](https://github.com/alchaincyf/huashu-motion); nothing in it is mocked up.
 - **More koi elsewhere.** `createPond({ most })` raises the cap of fourteen for a host that wants a fuller shoal; Codex Koi uses 24.
-- **Small.** Vanilla JavaScript, no build step, no dependencies: `pond.js` (the engine) and `app.js` (the page) are about 1,500 lines together, plus two web fonts (37 KB).
+- **Small.** Vanilla JavaScript, no build step, no dependencies: `pond.js` (the engine) and `app.js` (the page) are about 1,600 lines together, plus two web fonts (37 KB).
 
 <!-- family:start -->
 ## The ASCII Koi family
